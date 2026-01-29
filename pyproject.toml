@@ -1,0 +1,6 @@
+[project]
+name = "volatilityforecast"
+version = "0.1.0"
+description = "Application of neural networks with attention mechanism for forecasting economic instability."
+requires-python = ">=3.14"
+dependencies = []
