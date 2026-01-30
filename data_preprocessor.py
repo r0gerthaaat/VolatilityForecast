@@ -5,18 +5,27 @@ import numpy as np
 TICKER = '^GSPC'
 TARGET_WINDOW = 5
 
-story = dl.load(ticker=TICKER, start='2015-01-01', end='2026-01-01', timeframe='1d')
+START = '2015-01-01'
+END = '2026-01-01'
+TIMEFRAME = '1d'
 
-data = pd.DataFrame()
-data['log_return'] = np.log(story['Close']).diff()
+LOOKBACK_WINDOW = 14
 
-data['log_HL'] = np.log(story['High'] / story['Low'])
-data['log_CO'] = np.log(story['Close'] / story['Open'])
+def preprocess_data():
+    story = dl.load(ticker=TICKER, start=START, end=END, timeframe=TIMEFRAME)
 
-data['log_volume'] = np.log(story['Volume'])
+    data = pd.DataFrame()
+    data['log_return'] = np.log(story['Close']).diff()
 
-data['target'] = data['log_return'].rolling(window=TARGET_WINDOW).std().shift(-TARGET_WINDOW)
+    for i in np.arange(1, LOOKBACK_WINDOW + 1):
+        data[f'log_ret_lag_{i}'] = data['log_return'].shift(i)
 
-data = data.dropna()
+    data['log_HL'] = np.log(story['High'] / story['Low'])
+    data['log_CO'] = np.log(story['Close'] / story['Open'])
 
-print(data.tail(10))
+    data['log_volume'] = np.log(story['Volume'] + 1) # +1 to fix log(0)
+
+    data['target'] = data['log_return'].rolling(window=TARGET_WINDOW).std().shift(-TARGET_WINDOW)
+
+    data = data.dropna()
+    return data
