@@ -5,13 +5,13 @@ import numpy as np
 TICKER = '^GSPC'
 TARGET_WINDOW = 5
 
-START = '2015-01-01'
+START = '2000-01-01'
 END = '2026-01-01'
 TIMEFRAME = '1d'
 
 LOOKBACK_WINDOW = 10
 
-def preprocess_data():
+def preprocess_data() -> pd.DataFrame:
     story = dl.load(ticker=TICKER, start=START, end=END, timeframe=TIMEFRAME)
 
     data = pd.DataFrame()

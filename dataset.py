@@ -4,14 +4,14 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-def create_sequences(data: pd.DataFrame, window_size: int):
-    features = data.drop(columns=['target']).to_numpy()
-    targets = data['target'].to_numpy()
+def create_sequences(features: np.ndarray, targets: np.ndarray, window_size: int):
+    if len(features) != len(targets):
+        raise ValueError(f'Невідповідність розмірів вхідних масивів')
 
     xs = []
     ys = []
 
-    for i in range(len(data) - window_size + 1):
+    for i in range(len(features) - window_size + 1):
         x = features[i : i + window_size]
         y = targets[i + window_size - 1] # take the last target in the current window
         xs.append(x)
@@ -23,10 +23,10 @@ def create_sequences(data: pd.DataFrame, window_size: int):
 
 
 class VolatilityDataset(Dataset):
-    def __init__(self, data, window_size):
+    def __init__(self, features: np.ndarray, targets: np.ndarray, window_size: int):
         super().__init__()
 
-        xs, ys = create_sequences(data, window_size)
+        xs, ys = create_sequences(features, targets, window_size)
 
         self.xs = torch.tensor(xs, dtype=torch.float32)
         self.ys = torch.tensor(ys, dtype=torch.float32)
