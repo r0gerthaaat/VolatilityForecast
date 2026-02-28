@@ -19,26 +19,33 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-BATCH_SIZE = 32
+from arch import arch_model
 
-INPUT_SIZE = 8
-HIDDEN_SIZE = 16
-NUM_LAYERS = 1
-DROPOUT = 0.5
+import random
+import os
 
-LEARNING_RATE = 0.0005
-EPOCHS = 10
+BATCH_SIZE = 128
+
+INPUT_SIZE = 10
+HIDDEN_SIZE = 4
+NUM_LAYERS = 2
+DROPOUT = 0.0
+
+LEARNING_RATE = 0.001
+EPOCHS = 100
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
 
 def main():
-    # DATA PREPARING BLOCK
-    dp.LOOKBACK_WINDOW = 60
-    data = dp.preprocess_data()
-    print(len(data))
+    seed_everything()
 
-    train_data, test_data = train_test_split(data, test_size=0.2, shuffle=False)
+    # DATA PREPARING BLOCK
+    dp.LOOKBACK_WINDOW = 5
+    data = dp.preprocess_data()
+    print(f'{len(data)} rows')
+
+    train_data, test_data = train_test_split(data, test_size=0.1, shuffle=False)
     train_x = train_data.drop(columns=['target'])
     train_y = train_data[['target']]
 
@@ -62,13 +69,13 @@ def main():
 
     # MODEL BLOCK
     model = VolatilityLSTM(INPUT_SIZE, HIDDEN_SIZE, NUM_LAYERS, DROPOUT).to(device)
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     optimizer = torch.optim.Adam(model.parameters(), LEARNING_RATE)
 
     train_losses = []
     test_losses = []
 
-    print('Start training')
+    print('Start training...')
 
     for epoch in range(EPOCHS):
         # TRAINING
@@ -148,6 +155,9 @@ def main():
 
     acc = accuracy_score(direction_actuals, direction_predictions)
 
+    print('Calculating rolling GARCH...')
+    garch_preds = rolling_garch(train_data['log_return'], test_data['log_return'])
+
     test_naive_pred = test_actuals[:-1]
     test_naive_true = test_actuals[1:]
 
@@ -159,20 +169,67 @@ def main():
     m_r2 = r2_score(test_actuals, test_predictions)
     m_rmse = root_mean_squared_error(test_actuals, test_predictions)
 
+    g_mape = mean_absolute_percentage_error(test_actuals, garch_preds)
+    g_r2 = r2_score(test_actuals, garch_preds)
+    g_rmse = root_mean_squared_error(test_actuals, garch_preds)
+
     fig, ax = plt.subplots(figsize=(16, 9))
-    ax.plot(test_actuals, color='red', label='Справжнє')
-    ax.plot(test_predictions, color='blue', label='Прогноз')
+    ax.plot(test_actuals, color='red', label='Справжня', marker='.', ms=2)
+    ax.plot(test_predictions, color='blue', label='LSTM', marker='.', ms=2)
+    ax.plot(garch_preds, color='orange', label='GARCH(1,1)', marker='.', ms=2)
     ax.set_xlabel('Днів від початку тесту')
-    ax.set_ylabel('Волатильність = STDEV(від t+1 до t+5)')
-    fig.text(0.08, 0.98,
-             f'Модельний прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {acc:.4f}')
-    fig.text(0.08, 0.96,
+    ax.set_ylabel('Волатильність')
+    fig.text(0.1, 0.98,
+             f'LSTM прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {acc:.4f}')
+    fig.text(0.1, 0.96,
              f'Наївний прогноз (t0 = t-1): MAPE: {n_mape:.4f}, R^2: {n_r2:.4f}, RMSE: {n_rmse:.4f}')
-    fig.text(0.08, 0.02,
-             'Джерело: Yahoo Finance | Автор: Денис Ковіка, студент кафедри Економічної кібернетики')
-    plt.title('Прогнозування LSTM моделлю з 1 шаром')
+    fig.text(0.1, 0.94,
+             f'GARCH прогноз: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}')
+    fig.text(0.1, 0.02,
+             'Джерело даних: Yahoo Finance | Автор: Денис Ковіка, студент кафедри Економічної кібернетики | '
+             'https://github.com/r0gerthaaat/VolatilityForecast')
+    fig.text(0., 0.825,
+             f'Params:\nbatch_size={BATCH_SIZE}\ninput_size={INPUT_SIZE}\nhidden_size={HIDDEN_SIZE}\n'
+             f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}')
+    plt.title('Прогнозування волатильності')
     plt.legend()
     plt.show()
+
+
+def rolling_garch(train_returns, actual_test_returns):
+    train = train_returns.to_numpy() * 100
+    actual_test = actual_test_returns.to_numpy() * 100
+
+    preds = []
+    model = arch_model(train, p=2, q=2, vol='Garch', dist='t').fit(disp='off')
+
+    for i in range(len(actual_test)):
+        train = np.append(train, actual_test[i])
+
+        fc = model.forecast(horizon=1)
+
+        pred_vol = np.sqrt(fc.variance.values[-1, 0])
+        preds.append(pred_vol)
+
+        model = arch_model(train, p=2, q=2, vol='Garch', dist='t').fit(disp='off')
+    return preds[dp.LOOKBACK_WINDOW-1:]
+
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+
+    np.random.seed(seed)
+
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    print(f"Random fixed: seed={seed}")
 
 
 if __name__ == '__main__':
