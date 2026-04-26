@@ -15,7 +15,7 @@ class VolatilityLSTM(nn.Module):
         self.fc = nn.Linear(hidden_size, 1)
 
 
-    def forward(self, x: torch.tensor()) -> torch.tensor():
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         lstm_out, _ = self.lstm(x)
 
         last_out = lstm_out[:, -1, :]

@@ -2,6 +2,8 @@ import data_loader as dl
 import pandas as pd
 import numpy as np
 
+import rolling_garch as rg
+
 TICKER = '^GSPC'
 TARGET_WINDOW = 5
 
@@ -10,17 +12,21 @@ END = '2026-01-01'
 TIMEFRAME = '1d'
 
 LOOKBACK_WINDOW = 10
-USE_GARCH = False
+LOAD_EXISTING_DF = True
 
 def preprocess_data() -> pd.DataFrame:
+    if LOAD_EXISTING_DF:
+        return pd.read_csv('data/26-04-2024.csv', index_col=0)
+
     story = dl.load(ticker=TICKER, start=START, end=END, timeframe=TIMEFRAME)
     vix = dl.load(ticker='^VIX', start=START, end=END, timeframe=TIMEFRAME)
 
     data = pd.DataFrame()
     data['log_return'] = np.log(story['Close']).diff()
+    data = data.dropna(subset=['log_return'])
 
-    log_HL = np.log(story['High'] / story['Low'])
-    log_CO = np.log(story['Close'] / story['Open'])
+    log_HL = np.log(story['High'] / story['Low']).reindex(data.index)
+    log_CO = np.log(story['Close'] / story['Open']).reindex(data.index)
 
     data['log_volume'] = np.log(story['Volume'] + 1) # +1 to fix log(0)
 
@@ -36,12 +42,14 @@ def preprocess_data() -> pd.DataFrame:
 
     data['day_of_week'] = data.index.dayofweek + 1
 
-    data['log_vix'] = np.log(vix['Close'])
+    data['log_vix'] = np.log(vix['Close']).reindex(data.index)
     data['log_vix_return'] = data['log_vix'].diff()
 
     #data['target'] = data['log_return'].rolling(window=TARGET_WINDOW).std().shift(-TARGET_WINDOW) * 100
     data['target'] = data['garman-klass'].shift(-1)
     #data['target'] = data['parkinson'].shift(-1)
+
+    data['garch'] = rg.rolling_garch(data['log_return'] * 100, 250)
 
     data = data.dropna()
     return data
@@ -50,3 +58,12 @@ def preprocess_data() -> pd.DataFrame:
 def rolling_z_score(series, w):
     roll = series.rolling(window=w)
     return (series - roll.mean()) / roll.std()
+
+
+def main():
+    data = preprocess_data()
+    data.to_csv('data/26-04-2024.csv')
+
+
+if __name__ == '__main__':
+    main()

@@ -24,15 +24,15 @@ from arch import arch_model
 import random
 import os
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 
-INPUT_SIZE = 10
+INPUT_SIZE = 11
 HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 DROPOUT = 0.2
 
 LEARNING_RATE = 0.001
-EPOCHS = 89
+EPOCHS = 7
 
 USE_GARCH = False
 
