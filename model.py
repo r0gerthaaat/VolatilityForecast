@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class VolatilityLSTM(nn.Module):
     def __init__(self, input_size: int, hidden_size: int, num_layers: int, dropout: float = 0.2):
         super(VolatilityLSTM, self).__init__()
@@ -12,13 +13,23 @@ class VolatilityLSTM(nn.Module):
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        self.fc = nn.Linear(hidden_size, 1)
 
+        self.attention_layer = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, 1)
+        )
+
+        self.fc = nn.Linear(hidden_size, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         lstm_out, _ = self.lstm(x)
 
-        last_out = lstm_out[:, -1, :]
+        attention_scores = self.attention_layer(lstm_out)
+        attention_weights = torch.softmax(attention_scores, dim=1)
 
-        prediction = self.fc(last_out)
+        weighted_out = lstm_out * attention_weights
+        context_vector = torch.sum(weighted_out, dim=1)
+
+        prediction = self.fc(context_vector)
         return prediction

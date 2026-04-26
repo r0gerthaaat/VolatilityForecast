@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import statsmodels.api as sm
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -24,15 +25,15 @@ from arch import arch_model
 import random
 import os
 
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 
 INPUT_SIZE = 11
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 64
 NUM_LAYERS = 2
 DROPOUT = 0.2
 
 LEARNING_RATE = 0.001
-EPOCHS = 7
+EPOCHS = 44
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
@@ -41,9 +42,11 @@ def main():
     seed_everything()
 
     # DATA PREPARING BLOCK
-    dp.LOOKBACK_WINDOW = 5
+    dp.LOOKBACK_WINDOW = 3
     data = dp.preprocess_data()
     print(f'{len(data)} rows')
+
+    INPUT_SIZE = len(data.columns) - 1
 
     train_data, test_data = train_test_split(data, test_size=0.1, shuffle=False)
     train_x = train_data.drop(columns=['target'])
@@ -172,17 +175,30 @@ def main():
 
 
     print('Calculating rolling GARCH...')
-    garch_preds = rolling_garch(train_data['log_return'], test_data['log_return'])
+    if dp.USE_GARCH:
+        garch_preds = garch(train_data['log_return'], test_data['log_return'])
+    else:
+        garch_preds = [0] * len(test_actuals)
 
     g_mape = mean_absolute_percentage_error(test_actuals, garch_preds)
     g_r2 = r2_score(test_actuals, garch_preds)
     g_rmse = root_mean_squared_error(test_actuals, garch_preds)
 
+    print('Calculating rolling HAR...')
+    har_preds = har(train_data['garman-klass'], test_data['garman-klass'])
+
+    h_mape = mean_absolute_percentage_error(test_actuals, har_preds)
+    h_r2 = r2_score(test_actuals, har_preds)
+    h_rmse = root_mean_squared_error(test_actuals, har_preds)
+
     fig, ax = plt.subplots(figsize=(16, 9))
     ax.plot(test_actuals, color='red', label='Справжня', marker='.', ms=2)
-    ax.plot(test_predictions, color='blue', label='LSTM без уваги', marker='.', ms=2)
 
-    ax.plot(garch_preds, color='orange', label='GARCH(1,1)', marker='.', ms=2)
+    ax.plot(test_predictions, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
+
+    ax.plot(garch_preds, color='orange', label='GARCH(1,1)', marker='.', ms=2, ls='--')
+
+    ax.plot(har_preds, color='green', label='HAR-RV', marker='.', ms=2, ls='--', alpha=0.5)
 
     ax.set_xlabel('Днів від початку тесту')
     ax.set_ylabel('Волатильність')
@@ -193,18 +209,20 @@ def main():
 
     fig.text(0.1, 0.94,f'GARCH прогноз: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}')
 
+    fig.text(0.1, 0.92,f'HAR-RV прогноз: MAPE: {h_mape:.4f}, R^2: {h_r2:.4f}, RMSE: {h_rmse:.4f}')
+
     fig.text(0.1, 0.02,
              'Джерело даних: Yahoo Finance | Курсова робота. Код доступний за адресою:'
              ' https://github.com/r0gerthaaat/VolatilityForecast')
     fig.text(0., 0.825,
              f'Params:\nbatch_size={BATCH_SIZE}\ninput_size={INPUT_SIZE}\nhidden_size={HIDDEN_SIZE}\n'
-             f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}')
+             f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}\nwindow={dp.LOOKBACK_WINDOW}')
     plt.title('Прогнозування волатильності')
     plt.legend()
     plt.show()
 
 
-def rolling_garch(train_returns, actual_test_returns):
+def garch(train_returns, actual_test_returns):
     train = train_returns.to_numpy() * 100
     actual_test = actual_test_returns.to_numpy() * 100
 
@@ -221,6 +239,48 @@ def rolling_garch(train_returns, actual_test_returns):
 
         model = arch_model(train, p=2, q=2, vol='Garch', dist='t').fit(disp='off')
     return preds[dp.LOOKBACK_WINDOW-1:]
+
+
+from sklearn.linear_model import LinearRegression
+import pandas as pd
+import numpy as np
+
+
+def har(train_vol, actual_test_vol):
+    train = train_vol.to_numpy()
+    actual_test = actual_test_vol.to_numpy()
+
+    preds = []
+
+    def fit_har(data):
+        df = pd.DataFrame({'RV': data})
+        df['RV_daily'] = df['RV'].shift(1)
+        df['RV_weekly'] = df['RV'].shift(1).rolling(5).mean()
+        df['RV_monthly'] = df['RV'].shift(1).rolling(22).mean()
+        df = df.dropna()
+
+        X = df[['RV_daily', 'RV_weekly', 'RV_monthly']]
+        y = df['RV']
+
+        return LinearRegression().fit(X, y)
+
+    model = fit_har(train)
+
+    for i in range(len(actual_test)):
+        x_pred = pd.DataFrame({
+            'RV_daily': [train[-1]],
+            'RV_weekly': [train[-5:].mean()],
+            'RV_monthly': [train[-22:].mean()]
+        })
+
+        pred_vol = model.predict(x_pred)[0]
+        preds.append(pred_vol)
+
+        train = np.append(train, actual_test[i])
+
+        model = fit_har(train)
+
+    return preds[dp.LOOKBACK_WINDOW - 1:]
 
 
 def seed_everything(seed=42):

@@ -8,7 +8,7 @@ def rolling_garch(returns: pd.Series, window: int):
     for i in range(window, len(returns)):
         returns_window = returns.iloc[i - window + 1 : i + 1]
 
-        model = arch_model(y=returns_window, p=2, q=2, vol='GARCH', dist='t').fit(disp='off')
+        model = arch_model(y=returns_window, p=1, q=1, vol='GARCH', dist='t').fit(disp='off')
         res = model.forecast(horizon=1)
         forecasts.append(np.sqrt( res.variance.values[-1, 0] ))
 
