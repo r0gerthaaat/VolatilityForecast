@@ -10,6 +10,7 @@ END = '2026-01-01'
 TIMEFRAME = '1d'
 
 LOOKBACK_WINDOW = 10
+USE_GARCH = False
 
 def preprocess_data() -> pd.DataFrame:
     story = dl.load(ticker=TICKER, start=START, end=END, timeframe=TIMEFRAME)
@@ -49,9 +50,3 @@ def preprocess_data() -> pd.DataFrame:
 def rolling_z_score(series, w):
     roll = series.rolling(window=w)
     return (series - roll.mean()) / roll.std()
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-plt.subplots(figsize=(16,9))
-sns.heatmap(preprocess_data().corr(), annot=True)
-plt.show()

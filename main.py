@@ -24,15 +24,17 @@ from arch import arch_model
 import random
 import os
 
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 
 INPUT_SIZE = 10
-HIDDEN_SIZE = 4
+HIDDEN_SIZE = 128
 NUM_LAYERS = 2
-DROPOUT = 0.0
+DROPOUT = 0.2
 
 LEARNING_RATE = 0.001
-EPOCHS = 100
+EPOCHS = 89
+
+USE_GARCH = False
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
@@ -117,6 +119,9 @@ def main():
         if (epoch + 1) % 10 == 0:
             print(f'Epoch [{epoch+1}/{EPOCHS}], train loss: {average_train_loss}, test loss: {average_test_loss}')
 
+
+    print(f'Minimum loss epoch: {np.argmin(test_losses) + 1}')
+
     # VISUALIZING
     plt.rcParams.update({
         'font.family': 'sans-serif',
@@ -144,6 +149,7 @@ def main():
             test_predictions.append(out)
             test_actuals.append(y_batch)
 
+
     test_predictions = np.vstack(test_predictions)
     test_actuals = np.vstack(test_actuals)
 
@@ -153,10 +159,7 @@ def main():
     direction_predictions = np.sign(test_predictions[1:] - test_predictions[:-1])
     direction_actuals = np.sign(test_actuals[1:] - test_actuals[:-1])
 
-    acc = accuracy_score(direction_actuals, direction_predictions)
-
-    print('Calculating rolling GARCH...')
-    garch_preds = rolling_garch(train_data['log_return'], test_data['log_return'])
+    m_acc = accuracy_score(direction_actuals, direction_predictions)
 
     test_naive_pred = test_actuals[:-1]
     test_naive_true = test_actuals[1:]
@@ -169,25 +172,32 @@ def main():
     m_r2 = r2_score(test_actuals, test_predictions)
     m_rmse = root_mean_squared_error(test_actuals, test_predictions)
 
+
+    print('Calculating rolling GARCH...')
+    garch_preds = rolling_garch(train_data['log_return'], test_data['log_return'])
+
     g_mape = mean_absolute_percentage_error(test_actuals, garch_preds)
     g_r2 = r2_score(test_actuals, garch_preds)
     g_rmse = root_mean_squared_error(test_actuals, garch_preds)
 
     fig, ax = plt.subplots(figsize=(16, 9))
     ax.plot(test_actuals, color='red', label='Справжня', marker='.', ms=2)
-    ax.plot(test_predictions, color='blue', label='LSTM', marker='.', ms=2)
+    ax.plot(test_predictions, color='blue', label='LSTM без уваги', marker='.', ms=2)
+
     ax.plot(garch_preds, color='orange', label='GARCH(1,1)', marker='.', ms=2)
+
     ax.set_xlabel('Днів від початку тесту')
     ax.set_ylabel('Волатильність')
     fig.text(0.1, 0.98,
-             f'LSTM прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {acc:.4f}')
+             f'LSTM прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {m_acc:.4f}')
     fig.text(0.1, 0.96,
              f'Наївний прогноз (t0 = t-1): MAPE: {n_mape:.4f}, R^2: {n_r2:.4f}, RMSE: {n_rmse:.4f}')
-    fig.text(0.1, 0.94,
-             f'GARCH прогноз: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}')
+
+    fig.text(0.1, 0.94,f'GARCH прогноз: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}')
+
     fig.text(0.1, 0.02,
-             'Джерело даних: Yahoo Finance | Автор: Денис Ковіка, студент кафедри Економічної кібернетики | '
-             'https://github.com/r0gerthaaat/VolatilityForecast')
+             'Джерело даних: Yahoo Finance | Курсова робота. Код доступний за адресою:'
+             ' https://github.com/r0gerthaaat/VolatilityForecast')
     fig.text(0., 0.825,
              f'Params:\nbatch_size={BATCH_SIZE}\ninput_size={INPUT_SIZE}\nhidden_size={HIDDEN_SIZE}\n'
              f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}')
@@ -213,6 +223,7 @@ def rolling_garch(train_returns, actual_test_returns):
 
         model = arch_model(train, p=2, q=2, vol='Garch', dist='t').fit(disp='off')
     return preds[dp.LOOKBACK_WINDOW-1:]
+
 
 def seed_everything(seed=42):
     random.seed(seed)
