@@ -34,8 +34,6 @@ DROPOUT = 0.2
 LEARNING_RATE = 0.001
 EPOCHS = 7
 
-USE_GARCH = False
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
 
