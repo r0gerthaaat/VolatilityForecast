@@ -3,6 +3,7 @@ import numpy as np
 import statsmodels.api as sm
 import seaborn as sns
 import matplotlib.pyplot as plt
+from torch.nn import MSELoss, HuberLoss
 
 import data_preprocessor as dp
 from dataset import VolatilityDataset
@@ -11,6 +12,7 @@ from model import VolatilityLSTM
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from qlike import QLIKELoss
 
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.metrics import r2_score
@@ -20,21 +22,22 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from sklearn.linear_model import LinearRegression
+
 from arch import arch_model
 
 import random
 import os
 
-BATCH_SIZE = 256
+BATCH_SIZE = 64
 
 INPUT_SIZE = 11
-HIDDEN_SIZE = 64
+HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 DROPOUT = 0.2
 
 LEARNING_RATE = 0.001
-EPOCHS = 44
-
+EPOCHS = 9
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
 
@@ -42,7 +45,7 @@ def main():
     seed_everything()
 
     # DATA PREPARING BLOCK
-    dp.LOOKBACK_WINDOW = 3
+    dp.LOOKBACK_WINDOW = 5
     data = dp.preprocess_data()
     print(f'{len(data)} rows')
 
@@ -56,13 +59,13 @@ def main():
     test_y = test_data[['target']]
 
     x_scaler: StandardScaler = StandardScaler().fit(train_x)
-    y_scaler: StandardScaler = StandardScaler().fit(train_y)
+    # y_scaler: StandardScaler = StandardScaler().fit(train_y)
 
     train_x_scaled: np.ndarray = x_scaler.transform(train_x)
-    train_y_scaled: np.ndarray = y_scaler.transform(train_y)
+    train_y_scaled: np.ndarray = train_y.values#y_scaler.transform(train_y)
 
     test_x_scaled: np.ndarray = x_scaler.transform(test_x)
-    test_y_scaled: np.ndarray = y_scaler.transform(test_y)
+    test_y_scaled: np.ndarray = test_y.values#y_scaler.transform(test_y)
 
     train_ds = VolatilityDataset(train_x_scaled, train_y_scaled, dp.LOOKBACK_WINDOW)
     test_ds = VolatilityDataset(test_x_scaled, test_y_scaled, dp.LOOKBACK_WINDOW)
@@ -72,7 +75,7 @@ def main():
 
     # MODEL BLOCK
     model = VolatilityLSTM(INPUT_SIZE, HIDDEN_SIZE, NUM_LAYERS, DROPOUT).to(device)
-    criterion = nn.HuberLoss()
+    criterion = MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), LEARNING_RATE)
 
     train_losses = []
@@ -154,8 +157,9 @@ def main():
     test_predictions = np.vstack(test_predictions)
     test_actuals = np.vstack(test_actuals)
 
-    test_predictions = y_scaler.inverse_transform(test_predictions)
-    test_actuals = y_scaler.inverse_transform(test_actuals)
+    # test_predictions = y_scaler.inverse_transform(test_predictions)
+    # test_actuals = y_scaler.inverse_transform(test_actuals)
+    print(len(test_predictions))
 
     direction_predictions = np.sign(test_predictions[1:] - test_predictions[:-1])
     direction_actuals = np.sign(test_actuals[1:] - test_actuals[:-1])
@@ -172,7 +176,6 @@ def main():
     m_mape = mean_absolute_percentage_error(test_actuals, test_predictions)
     m_r2 = r2_score(test_actuals, test_predictions)
     m_rmse = root_mean_squared_error(test_actuals, test_predictions)
-
 
     print('Calculating rolling GARCH...')
     if dp.USE_GARCH:
@@ -239,11 +242,6 @@ def garch(train_returns, actual_test_returns):
 
         model = arch_model(train, p=2, q=2, vol='Garch', dist='t').fit(disp='off')
     return preds[dp.LOOKBACK_WINDOW-1:]
-
-
-from sklearn.linear_model import LinearRegression
-import pandas as pd
-import numpy as np
 
 
 def har(train_vol, actual_test_vol):
