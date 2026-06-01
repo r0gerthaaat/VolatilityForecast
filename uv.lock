@@ -411,6 +411,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dieboldmariano"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/eb/5f2a15a611d59ea72023a0ad1788f842177125235c2932cbb44636f74ac6/dieboldmariano-1.1.0.tar.gz", hash = "sha256:7afe22da3440dbaa3d6d8f5d0785ad92ccd256d87aba2b214485c0fb8856da22", size = 5808, upload-time = "2025-01-09T17:32:33.436Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/e9/85a1d3d95ac9124ab3fc15763031a2f9079affe6483896270988d87fc1a0/dieboldmariano-1.1.0-py3-none-any.whl", hash = "sha256:5000b8bfabfcb3ca9aebdfd74b6c9814ce5e00650356323b0939cdf6f7cd4d7e", size = 6751, upload-time = "2025-01-09T17:32:30.236Z" },
+]
+
+[[package]]
 name = "executing"
 version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1808,10 +1817,12 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "arch" },
+    { name = "dieboldmariano" },
     { name = "ipykernel" },
     { name = "numpy" },
     { name = "pandas-stubs" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "scipy-stubs" },
     { name = "seaborn" },
     { name = "statsmodels" },
@@ -1822,10 +1833,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "arch", specifier = ">=8.0.0" },
+    { name = "dieboldmariano", specifier = ">=1.1.0" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "numpy", specifier = ">=2.4.1" },
     { name = "pandas-stubs", specifier = "~=3.0.0" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "scipy", specifier = ">=1.17.0" },
     { name = "scipy-stubs", specifier = "~=1.17.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "statsmodels", specifier = ">=0.14.6" },
