@@ -1,12 +1,11 @@
 import numpy as np
-import pandas as pd
 
 import torch
 from torch.utils.data import Dataset
 
 def create_sequences(features: np.ndarray, targets: np.ndarray, window_size: int):
     if len(features) != len(targets):
-        raise ValueError(f'Невідповідність розмірів вхідних масивів')
+        raise ValueError(f'Entry arrays size is unequal')
 
     xs = []
     ys = []

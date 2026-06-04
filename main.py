@@ -1,19 +1,17 @@
-import pandas as pd
 import numpy as np
-import statsmodels.api as sm
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-from torch.nn import MSELoss, HuberLoss
 
-import data_preprocessor as dp
-from dataset import VolatilityDataset
-from model import VolatilityLSTM
+from torch.nn import HuberLoss
+
+from src.data import data_preprocessor as dp
+from src.data.dataset import VolatilityDataset
+from src.models.model import VolatilityLSTM
+from src.models import rolling_har as rh
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
-from qlike import QLIKELoss
 
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.metrics import r2_score
@@ -22,10 +20,6 @@ from sklearn.metrics import accuracy_score
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
-from sklearn.linear_model import LinearRegression
-
-from arch import arch_model
 
 import random
 import os
@@ -141,11 +135,11 @@ def main():
     })
     ax = plt.gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    sns.lineplot(train_losses, color='red', label='Навчання')
-    sns.lineplot(test_losses, color='blue', label='Тестування')
-    plt.title('')
-    plt.ylabel('Функція втрат')
-    plt.xlabel('Епоха')
+    sns.lineplot(train_losses, color='red', label='Train')
+    sns.lineplot(test_losses, color='blue', label='Test')
+    plt.title('Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
     plt.legend()
     plt.grid()
     plt.show()
@@ -181,17 +175,17 @@ def main():
     mean_attention = np.mean(all_attention_weights, axis=0)
 
     sns.barplot(x=np.arange(1, dp.LOOKBACK_WINDOW + 1), y=mean_attention, color='royalblue')
-    plt.title('')
-    plt.xlabel('День у вікні (1 - найстаріший, 21 - найближчий)')
-    plt.ylabel('Середня вага')
+    plt.title('Weights distribution')
+    plt.xlabel('Day in the window (21 - newest)')
+    plt.ylabel('Average weight')
     plt.grid(axis='y', alpha=0.3)
     plt.show()
 
     plt.figure(figsize=(14, 6))
-    sns.heatmap(all_attention_weights[:].T, cmap='viridis', cbar_kws={'label': 'Вага'})
+    sns.heatmap(all_attention_weights[:].T, cmap='viridis', cbar_kws={'label': 'Weight'})
     plt.title('')
-    plt.xlabel('Днів від початку тесту')
-    plt.ylabel('День у вікні (лаг, 1 - найстаріший, 21 - найближчий)')
+    plt.xlabel('Testing day')
+    plt.ylabel('Window day (lag, 21 - newest)')
     plt.gca().invert_yaxis()
     plt.show()
     #----------------------------------------------------------
@@ -223,9 +217,8 @@ def main():
     g_direction_predictions = np.sign(garch_preds[1:] - garch_preds[:-1])
     g_mda = accuracy_score(direction_actuals, g_direction_predictions)
 
-
     print('Calculating rolling HAR...')
-    har_preds = np.array(har(train_data['garman-klass'], test_data['garman-klass']))
+    har_preds = np.array(rh.rolling_har(train_data['garman-klass'], test_data['garman-klass'], 500))
 
     h_mape = mean_absolute_percentage_error(test_actuals, har_preds)
     h_r2 = r2_score(test_actuals, har_preds)
@@ -234,7 +227,7 @@ def main():
     h_mda = accuracy_score(direction_actuals, h_direction_predictions)
 
     fig, ax = plt.subplots(figsize=(16, 9))
-    ax.plot(test_actuals, color='red', label='Справжня', marker='.', ms=2)
+    ax.plot(test_actuals, color='red', label='Actual', marker='.', ms=2)
 
     ax.plot(test_predictions, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
 
@@ -242,20 +235,19 @@ def main():
 
     ax.plot(har_preds, color='forestgreen', label='HAR-RV', marker='.', ms=2, ls='--', alpha=0.5)
 
-    ax.set_xlabel('Днів від початку тесту')
-    ax.set_ylabel('Волатильність Гарман-Класса')
+    ax.set_xlabel('Testing day')
+    ax.set_ylabel('Garman-Klass volatility')
     fig.text(0.1, 0.98,
-             f'LSTM прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, MDA: {m_mda:.4f}')
+             f'LSTM: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, MDA: {m_mda:.4f}')
     fig.text(0.1, 0.96,
-             f'Наївний прогноз (t0 = t-1): MAPE: {n_mape:.4f}, R^2: {n_r2:.4f}, RMSE: {n_rmse:.4f}, MDA: -')
+             f'Naive (t0 = t-1): MAPE: {n_mape:.4f}, R^2: {n_r2:.4f}, RMSE: {n_rmse:.4f}, MDA: -')
 
-    fig.text(0.1, 0.94,f'GARCH прогноз: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}, MDA: {g_mda:.4f}')
+    fig.text(0.1, 0.94,f'GARCH: MAPE: {g_mape:.4f}, R^2: {g_r2:.4f}, RMSE: {g_rmse:.4f}, MDA: {g_mda:.4f}')
 
-    fig.text(0.1, 0.92,f'HAR-RV прогноз: MAPE: {h_mape:.4f}, R^2: {h_r2:.4f}, RMSE: {h_rmse:.4f}, MDA: {h_mda:.4f}')
+    fig.text(0.1, 0.92,f'HAR-RV: MAPE: {h_mape:.4f}, R^2: {h_r2:.4f}, RMSE: {h_rmse:.4f}, MDA: {h_mda:.4f}')
 
     fig.text(0.1, 0.02,
-             'Джерело даних: Yahoo Finance | Курсова робота. Код доступний за адресою:'
-             ' https://github.com/r0gerthaaat/VolatilityForecast')
+             'Source of data: Yahoo Finance | https://github.com/r0gerthaaat/VolatilityForecast')
     fig.text(0., 0.825,
              f'Params:\nbatch_size={BATCH_SIZE}\ninput_size={INPUT_SIZE}\nhidden_size={HIDDEN_SIZE}\n'
              f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}\nwindow={dp.LOOKBACK_WINDOW}')
@@ -273,7 +265,7 @@ def main():
     dm_stat, p_value = dm.dm_test(test_naive_true, test_predictions[1:], test_naive_pred, h=1, loss=lambda u, v: abs(u - v))
     print(f"DM Statistic LSTM/Naive: {dm_stat:.4f}, P-value: {p_value:.4f}")
 
-    print(f'test has: {len(test_actuals)} actuals, {len(test_predictions)} preds')
+    print(f'Test has: {len(test_actuals)} actuals, {len(test_predictions)} preds')
 
     # DIFFERENCES UNROLLING (CHECK IF DIFF IS THE TARGET VALUE)
     if dp.USE_DIFFERENCES:
@@ -295,24 +287,25 @@ def main():
 
         m_acc = accuracy_score(direction_actuals, direction_predictions)
 
-        ax2.plot(test_actuals_unrolled, color='red', label='Справжня', marker='.', ms=2)
+        ax2.plot(test_actuals_unrolled, color='red', label='Actual', marker='.', ms=2)
 
         ax2.plot(test_predictions_unrolled, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
 
         fig2.text(0.1, 0.98,
-                 f'LSTM прогноз: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {m_acc:.4f}')
-        ax2.set_xlabel('Днів від початку тесту')
-        ax2.set_ylabel('Волатильність Гарман-Класса')
+                 f'LSTM: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {m_acc:.4f}')
+        ax2.set_xlabel('Test day')
+        ax2.set_ylabel('Garman-Klass volatility')
         plt.legend()
         plt.grid()
         plt.show()
 
+    print('Calculating IVaR:')
     oc_ret = dp.get_CO_log_rets()
     test_oc_ret = oc_ret.tail(len(test_actuals)).to_numpy() * 100
 
     confidence_level = 0.95
     z_score = stats.norm.ppf(confidence_level)
-    print(f'z-score: {z_score}')
+    print(f'Z-score: {z_score}')
 
     total_days = len(test_oc_ret)
 
@@ -341,43 +334,6 @@ def main():
     print(f'GARCH IVaR hits: {g_num_exceptions}, Hit Rate: {g_hit_rate:.2%}')
     print(f'HAR IVaR hits: {h_num_exceptions}, Hit Rate: {h_hit_rate:.2%}')
     print(f'Naive IVaR hits: {n_num_exceptions}, Hit Rate: {n_hit_rate:.2%}')
-
-
-def har(train_vol, actual_test_vol):
-    train = train_vol.to_numpy()
-    actual_test = actual_test_vol.to_numpy()
-
-    preds = []
-
-    def fit_har(data):
-        df = pd.DataFrame({'RV': data})
-        df['RV_daily'] = df['RV'].shift(1)
-        df['RV_weekly'] = df['RV'].shift(1).rolling(5).mean()
-        df['RV_monthly'] = df['RV'].shift(1).rolling(22).mean()
-        df = df.dropna()
-
-        X = df[['RV_daily', 'RV_weekly', 'RV_monthly']]
-        y = df['RV']
-
-        return LinearRegression().fit(X, y)
-
-    model = fit_har(train)
-
-    for i in range(len(actual_test)):
-        x_pred = pd.DataFrame({
-            'RV_daily': [train[-1]],
-            'RV_weekly': [train[-5:].mean()],
-            'RV_monthly': [train[-22:].mean()]
-        })
-
-        pred_vol = model.predict(x_pred)[0]
-        preds.append(pred_vol)
-
-        train = np.append(train, actual_test[i])
-
-        model = fit_har(train)
-
-    return preds[dp.LOOKBACK_WINDOW - 1:]
 
 
 def seed_everything(seed=42):
