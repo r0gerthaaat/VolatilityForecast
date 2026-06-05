@@ -34,6 +34,9 @@ $$\sigma_t^{GK} = \sqrt{\frac{1}{2}\ln\left(\frac{h_t}{l_t}\right)^{2} - (2\ln 2
 
 The architecture consists of a two-layer LSTM (hidden size 256) followed by an Attention layer and a linear output head.
 
+<img width="511" height="287" alt="lstm-att architecture" src="https://github.com/user-attachments/assets/1e4d5bda-a0c9-4567-bd73-a204d14b4265" />
+
+
 The LSTM component handles long-term regime memory and short-term shock persistence. The core motivation for the Attention layer is the information bottleneck problem in standard RNNs: compressing an entire sequence into a single fixed-size vector causes older, potentially relevant states to be forgotten. The attention mechanism instead computes a weighted sum over all hidden states within the 21-day lookback window, allowing the model to dynamically focus on specific historical days rather than treating all of them uniformly.
 
 <img width="576" height="297" alt="attn-weights" src="https://github.com/user-attachments/assets/2b327d70-c772-4b2c-a130-46416391beb9" />
