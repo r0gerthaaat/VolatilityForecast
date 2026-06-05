@@ -2,11 +2,6 @@ from src.data import data_loader as dl
 import pandas as pd
 import numpy as np
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-
-from sklearn.metrics import r2_score
-
 from src.models import rolling_garch as rg
 
 from pathlib import Path
@@ -103,6 +98,6 @@ def rolling_z_score(series, w):
 
 
 def get_CO_log_rets():
-    file_orig = project_root / 'data' / 'target-original-log-co.csv'
+    file_orig = project_root / 'data' / 'target-original-with-log-open-to-close-returns.csv'
     data = pd.read_csv(file_orig, index_col=0, parse_dates=True)
     return data['co_log_ret']

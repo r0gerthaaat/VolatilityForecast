@@ -3,7 +3,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-from torch.nn import HuberLoss
+from torch.nn import HuberLoss, MSELoss
+from src.evaluation.qlike import QLIKELoss
 
 from src.data import data_preprocessor as dp
 from src.data.dataset import VolatilityDataset
@@ -43,7 +44,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Device: {device}')
 
 def main():
-    seed_everything()
+    seed_everything(42)
 
     # DATA PREPARING BLOCK
     dp.LOOKBACK_WINDOW = 21
@@ -144,7 +145,7 @@ def main():
     plt.grid()
     plt.show()
 
-    test_predictions = []
+    lstm_test_predictions = []
     test_actuals = []
     all_attention_weights = []
 
@@ -158,16 +159,15 @@ def main():
             y_batch = y_batch.cpu().detach().numpy()
             attn_weights = attn_weights.cpu().detach().numpy()
 
-            test_predictions.append(out)
+            lstm_test_predictions.append(out)
             test_actuals.append(y_batch)
             all_attention_weights.append(attn_weights)
 
-
-    test_predictions = np.vstack(test_predictions).flatten()
+    lstm_test_predictions = np.vstack(lstm_test_predictions).flatten()
     test_actuals = np.vstack(test_actuals).flatten()
 
     raw_diffs_actuals = test_actuals.copy()  # saving diffs
-    raw_diffs_predictions = test_predictions.copy()
+    lstm_raw_diffs_predictions = lstm_test_predictions.copy()
 
     all_attention_weights = np.concatenate(all_attention_weights, axis=0).squeeze(-1)
 
@@ -175,7 +175,7 @@ def main():
     mean_attention = np.mean(all_attention_weights, axis=0)
 
     sns.barplot(x=np.arange(1, dp.LOOKBACK_WINDOW + 1), y=mean_attention, color='royalblue')
-    plt.title('Weights distribution')
+    plt.title('Average attention weights distribution')
     plt.xlabel('Day in the window (21 - newest)')
     plt.ylabel('Average weight')
     plt.grid(axis='y', alpha=0.3)
@@ -183,19 +183,22 @@ def main():
 
     plt.figure(figsize=(14, 6))
     sns.heatmap(all_attention_weights[:].T, cmap='viridis', cbar_kws={'label': 'Weight'})
-    plt.title('')
+    plt.title('Attention weights')
     plt.xlabel('Testing day')
     plt.ylabel('Window day (lag, 21 - newest)')
     plt.gca().invert_yaxis()
     plt.show()
     #----------------------------------------------------------
-    # test_predictions = y_scaler.inverse_transform(test_predictions)
+    # lstm_test_predictions = y_scaler.inverse_transform(lstm_test_predictions)
     # test_actuals = y_scaler.inverse_transform(test_actuals)
 
     direction_actuals = np.sign(test_actuals[1:] - test_actuals[:-1])
-    m_direction_predictions = np.sign(test_predictions[1:] - test_predictions[:-1])
+    lstm_direction_predictions = np.sign(lstm_test_predictions[1:] - lstm_test_predictions[:-1])
 
-    m_mda = accuracy_score(direction_actuals, m_direction_predictions)
+    lstm_mda = accuracy_score(direction_actuals, lstm_direction_predictions)
+    lstm_mape = mean_absolute_percentage_error(test_actuals, lstm_test_predictions)
+    lstm_r2 = r2_score(test_actuals, lstm_test_predictions)
+    lstm_rmse = root_mean_squared_error(test_actuals, lstm_test_predictions)
 
     test_naive_pred = test_actuals[:-1]
     test_naive_true = test_actuals[1:]
@@ -203,10 +206,6 @@ def main():
     n_mape = mean_absolute_percentage_error(test_naive_true, test_naive_pred)
     n_r2 = r2_score(test_naive_true, test_naive_pred)
     n_rmse = root_mean_squared_error(test_naive_true, test_naive_pred)
-
-    m_mape = mean_absolute_percentage_error(test_actuals, test_predictions)
-    m_r2 = r2_score(test_actuals, test_predictions)
-    m_rmse = root_mean_squared_error(test_actuals, test_predictions)
 
     print('Extracting rolling GARCH...')
     garch_preds = data['garch'].tail(len(test_actuals)).to_numpy()
@@ -229,7 +228,7 @@ def main():
     fig, ax = plt.subplots(figsize=(16, 9))
     ax.plot(test_actuals, color='red', label='Actual', marker='.', ms=2)
 
-    ax.plot(test_predictions, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
+    ax.plot(lstm_test_predictions, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
 
     ax.plot(garch_preds, color='orange', label='GARCH(1,1)', marker='.', ms=2, ls='--')
 
@@ -238,7 +237,7 @@ def main():
     ax.set_xlabel('Testing day')
     ax.set_ylabel('Garman-Klass volatility')
     fig.text(0.1, 0.98,
-             f'LSTM: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, MDA: {m_mda:.4f}')
+             f'LSTM: MAPE: {lstm_mape:.4f}, R^2: {lstm_r2:.4f}, RMSE: {lstm_rmse:.4f}, MDA: {lstm_mda:.4f}')
     fig.text(0.1, 0.96,
              f'Naive (t0 = t-1): MAPE: {n_mape:.4f}, R^2: {n_r2:.4f}, RMSE: {n_rmse:.4f}, MDA: -')
 
@@ -251,21 +250,21 @@ def main():
     fig.text(0., 0.825,
              f'Params:\nbatch_size={BATCH_SIZE}\ninput_size={INPUT_SIZE}\nhidden_size={HIDDEN_SIZE}\n'
              f'num_layers={NUM_LAYERS}\ndropout={DROPOUT}\nlr={LEARNING_RATE}\nepochs={EPOCHS}\nwindow={dp.LOOKBACK_WINDOW}')
-    plt.title('')
+    plt.title('Garman-Klass volatility forecasting')
     plt.legend()
     plt.grid()
     plt.show()
 
-    dm_stat, p_value = dm.dm_test(test_actuals, test_predictions, garch_preds, h=1, loss=lambda u, v: abs(u - v))
+    dm_stat, p_value = dm.dm_test(test_actuals, lstm_test_predictions, garch_preds, h=1, loss=lambda u, v: abs(u - v))
     print(f"DM Statistic LSTM/GARCH: {dm_stat:.4f}, P-value: {p_value:.4f}")
 
-    dm_stat, p_value = dm.dm_test(test_actuals, test_predictions, har_preds, h=1, loss=lambda u, v: abs(u - v))
+    dm_stat, p_value = dm.dm_test(test_actuals, lstm_test_predictions, har_preds, h=1, loss=lambda u, v: abs(u - v))
     print(f"DM Statistic LSTM/HAR: {dm_stat:.4f}, P-value: {p_value:.4f}")
 
-    dm_stat, p_value = dm.dm_test(test_naive_true, test_predictions[1:], test_naive_pred, h=1, loss=lambda u, v: abs(u - v))
+    dm_stat, p_value = dm.dm_test(test_naive_true, lstm_test_predictions[1:], test_naive_pred, h=1, loss=lambda u, v: abs(u - v))
     print(f"DM Statistic LSTM/Naive: {dm_stat:.4f}, P-value: {p_value:.4f}")
 
-    print(f'Test has: {len(test_actuals)} actuals, {len(test_predictions)} preds')
+    print(f'Test has: {len(test_actuals)} actuals, {len(lstm_test_predictions)} preds')
 
     # DIFFERENCES UNROLLING (CHECK IF DIFF IS THE TARGET VALUE)
     if dp.USE_DIFFERENCES:
@@ -273,28 +272,29 @@ def main():
 
         true_baseline = test_data['garman-klass'].iloc[dp.LOOKBACK_WINDOW - 1]
         prev_gk = test_data['garman-klass'].iloc[
-            dp.LOOKBACK_WINDOW - 1: dp.LOOKBACK_WINDOW - 1 + len(raw_diffs_predictions)].values
+            dp.LOOKBACK_WINDOW - 1: dp.LOOKBACK_WINDOW - 1 + len(lstm_raw_diffs_predictions)].values
 
         test_actuals_unrolled = raw_diffs_actuals.cumsum() + true_baseline
-        test_predictions_unrolled = raw_diffs_predictions + prev_gk
+        lstm_test_predictions_unrolled = lstm_raw_diffs_predictions + prev_gk
 
-        m_mape = mean_absolute_percentage_error(test_actuals_unrolled, test_predictions_unrolled)
-        m_r2 = r2_score(test_actuals_unrolled, test_predictions_unrolled)
-        m_rmse = root_mean_squared_error(test_actuals_unrolled, test_predictions_unrolled)
+        lstm_mape = mean_absolute_percentage_error(test_actuals_unrolled, lstm_test_predictions_unrolled)
+        lstm_r2 = r2_score(test_actuals_unrolled, lstm_test_predictions_unrolled)
+        lstm_rmse = root_mean_squared_error(test_actuals_unrolled, lstm_test_predictions_unrolled)
 
-        direction_predictions = np.sign(test_predictions_unrolled[1:] - test_predictions_unrolled[:-1])
+        lstm_direction_predictions = np.sign(lstm_test_predictions_unrolled[1:] - lstm_test_predictions_unrolled[:-1])
         direction_actuals = np.sign(test_actuals_unrolled[1:] - test_actuals_unrolled[:-1])
 
-        m_acc = accuracy_score(direction_actuals, direction_predictions)
+        lstm_acc = accuracy_score(direction_actuals, lstm_direction_predictions)
 
         ax2.plot(test_actuals_unrolled, color='red', label='Actual', marker='.', ms=2)
 
-        ax2.plot(test_predictions_unrolled, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
+        ax2.plot(lstm_test_predictions_unrolled, color='blue', label='LSTM-Attention', marker='.', ms=2, lw=2)
 
         fig2.text(0.1, 0.98,
-                 f'LSTM: MAPE: {m_mape:.4f}, R^2: {m_r2:.4f}, RMSE: {m_rmse:.4f}, вгадування напрямку: {m_acc:.4f}')
-        ax2.set_xlabel('Test day')
-        ax2.set_ylabel('Garman-Klass volatility')
+                 f'LSTM: MAPE: {lstm_mape:.4f}, R^2: {lstm_r2:.4f}, RMSE: {lstm_rmse:.4f}, MDA: {lstm_acc:.4f}')
+        ax2.set_xlabel('Testing day')
+        ax2.set_ylabel('Garman-Klass volatility difference')
+        plt.title('Garman-Klass volatility differences forecasting')
         plt.legend()
         plt.grid()
         plt.show()
@@ -309,7 +309,7 @@ def main():
 
     total_days = len(test_oc_ret)
 
-    m_ivar_95 = z_score * test_predictions
+    m_ivar_95 = z_score * lstm_test_predictions
     m_exceptions = test_oc_ret < -m_ivar_95
     m_num_exceptions = np.sum(m_exceptions)
     m_hit_rate = m_num_exceptions / total_days
