@@ -7,13 +7,11 @@ from src.models import rolling_garch as rg
 from pathlib import Path
 
 TICKER = '^GSPC'
-TARGET_WINDOW = 5
-
 START = '2015-01-01'
 END = '2026-01-01'
 TIMEFRAME = '1d'
 
-LOOKBACK_WINDOW = 10
+LOOKBACK_WINDOW = 21
 LOAD_EXISTING_DF = True
 USE_GARCH = True
 USE_DIFFERENCES = False

@@ -125,7 +125,6 @@ def main():
         if (epoch + 1) % 10 == 0:
             print(f'Epoch [{epoch+1}/{EPOCHS}], train loss: {average_train_loss}, test loss: {average_test_loss}')
 
-
     print(f'Minimum loss epoch: {np.argmin(test_losses) + 1}')
 
     # VISUALIZING
@@ -293,8 +292,8 @@ def main():
         fig2.text(0.1, 0.98,
                  f'LSTM: MAPE: {lstm_mape:.4f}, R^2: {lstm_r2:.4f}, RMSE: {lstm_rmse:.4f}, MDA: {lstm_acc:.4f}')
         ax2.set_xlabel('Testing day')
-        ax2.set_ylabel('Garman-Klass volatility difference')
-        plt.title('Garman-Klass volatility differences forecasting')
+        ax2.set_ylabel('Garman-Klass volatility')
+        plt.title('Garman-Klass volatility unrolled differences forecasting')
         plt.legend()
         plt.grid()
         plt.show()
